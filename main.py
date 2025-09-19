@@ -1,7 +1,3 @@
-from fastapi import FastAPI
+from app.main import app
 
-app = FastAPI()
-
-@app.get("/")
-def read_root():
-    return {"message": "FastAPI에 오신 것을 환영합니다!"}
+__all__ = ["app"]
