@@ -1,54 +1,97 @@
-# FastAPI + PostgreSQL CRUD 서버
+# FastAPI + OpenAI API 백엔드 서버
 
-FastAPI와 SQLAlchemy를 사용해 PostgreSQL과 연동하는 기본 CRUD 백엔드입니다. `product_order`와 `customer` 리소스를 예시로 포함하고 있으며, Docker Compose로 손쉽게 로컬 개발 환경을 구성할 수 있습니다.
+FastAPI를 사용하여 OpenAI API를 호출하는 백엔드 API 서버입니다.
 
 ## 📋 목차
 
 - [설치 및 설정](#설치-및-설정)
-- [환경 변수](#환경-변수)
-- [PostgreSQL 실행](#postgresql-실행)
+- [환경 변수 설정](#환경-변수-설정)
 - [프로젝트 구조](#프로젝트-구조)
 - [실행 방법](#실행-방법)
 - [API 엔드포인트](#api-엔드포인트)
 - [개발 가이드](#개발-가이드)
 
-## 설치 및 설정
+## 🚀 설치 및 설정
 
-### 1. Python 환경 준비
+### 1. Python 환경 설정
 
 ```bash
-python --version            # Python 3.11 이상 권장
-python -m venv .venv        # 가상환경 생성
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+# Python 3.8+ 버전 확인
+python --version
+
+# 가상환경 생성 (권장)
+python -m venv .venv
+
+# 가상환경 활성화
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+source .venv/bin/activate
 ```
 
-`requirements.txt`에는 FastAPI, SQLAlchemy, Pydantic, PostgreSQL 드라이버 등의 기본 의존성이 정의되어 있습니다.
+### 2. 의존성 설치
 
-## 환경 변수
+```bash
+# requirements.txt 파일 생성 후 설치
+pip install fastapi uvicorn openai python-dotenv redis
 
-루트에 `.env` 파일을 만들고 데이터베이스 연결 문자열을 정의합니다. 값이 없으면 `app/core/config.py`의 기본값이 사용됩니다.
+# 또는 직접 설치
+pip install fastapi==0.104.1
+pip install uvicorn[standard]==0.24.0
+pip install openai==1.3.0
+pip install python-dotenv==1.0.0
+pip install redis==5.0.1
+```
+
+### 3. requirements.txt 파일 생성
+
+프로젝트 루트에 `requirements.txt` 파일을 생성하고 다음 내용을 추가:
+
+```txt
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+openai==1.3.0
+python-dotenv==1.0.0
+redis==5.0.1
+pydantic==2.5.0
+```
+
+## 🔧 환경 변수 설정
+
+### 1. .env 파일 생성
+
+프로젝트 루트에 `.env` 파일을 생성하고 다음 내용을 추가:
 
 ```env
-DATABASE_URL=postgresql://postgres:1234@localhost:5432/postgres
+# OpenAI API 설정
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_ORG_ID=your_organization_id_here
+
+# Redis 설정
+REDIS_URL=redis://localhost:6379
+REDIS_PASSWORD=your_redis_password
+
+# 서버 설정
+HOST=0.0.0.0
+PORT=8000
+DEBUG=True
 ```
 
-`Settings` 클래스가 `.env`를 읽어 `settings.database_url`을 제공하며, `app/db/session.py`에서 SQLAlchemy `engine` 생성 시 사용합니다.
+### 2. 환경 변수 로드
 
-## PostgreSQL 실행
+Python 코드에서 환경 변수를 로드하려면:
 
-`docker-compose.yml`에는 Postgres 15 컨테이너가 정의되어 있습니다.
+```python
+from dotenv import load_dotenv
+import os
 
-```bash
-docker compose up -d postgres
-docker compose ps            # 상태 확인
-docker logs -f fastai-postgres  # 초기화 로그 확인 (선택)
+load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+REDIS_URL = os.getenv("REDIS_URL")
 ```
 
-중단 시에는 `docker compose stop postgres` 또는 `docker compose down`을 사용합니다.
-
-## 프로젝트 구조
+## 📁 프로젝트 구조
 
 ```
 fast-ai/
@@ -63,30 +106,89 @@ fast-ai/
 ├── docker-compose.yml     # Postgres 컨테이너 정의
 ├── main.py                # uvicorn 진입점 (app.main.app re-export)
 ├── requirements.txt
-├── README-origin.md       # 이전 README 보관본
-└── README.md              # 현재 문서
+└── README.md
 ```
 
-`app/main.py`의 lifespan 훅은 앱 기동 시 `Base.metadata.create_all(bind=engine)`을 호출해 개발 환경에서 필요한 테이블을 자동 생성합니다. `app/api/routers/__init__.py`는 라우터를 리스트로 묶어 `main.py`에서 순회하며 등록합니다.
+## 🏃‍♂️ 실행 방법
 
-## 실행 방법
+### 1. 개발 서버 실행
 
 ```bash
+# 기본 실행
 uvicorn main:app --reload
+
+# 특정 호스트와 포트로 실행
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+# 환경 변수와 함께 실행
+uvicorn main:app --reload --env-file .env
 ```
 
-- Swagger UI: `http://127.0.0.1:8000/docs`
-- ReDoc: `http://127.0.0.1:8000/redoc`
+### 2. 프로덕션 서버 실행
 
-## API 엔드포인트
+```bash
+# Gunicorn 사용 (Linux/macOS)
+gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker
 
-주요 엔드포인트는 FastAPI 문서(`/docs`, `/redoc`)에서 확인할 수 있습니다. 기본적으로 `/` 헬스체크와 `/product-orders`, `/customers` CRUD 경로가 제공됩니다.
+# Docker 사용
+docker build -t fast-ai-api .
+docker run -p 8000:8000 --env-file .env fast-ai-api
+```
 
-## 개발 가이드
+## 🔌 API 엔드포인트
 
-- `.env`, `.venv`, `__pycache__` 등 임시 파일은 `.gitignore`에 포함되어 있으니 그대로 두면 됩니다.
-- 현재는 `Base.metadata.create_all`로 스키마를 초기화하지만, 운영 환경에서는 Alembic 등 마이그레이션 도구 도입을 권장합니다.
-- 라우터가 늘어날 경우 `app/api/routers/__init__.py`의 리스트에만 추가하면 됩니다.
-- 복잡한 조회가 필요하다면 `app/services/product_order.py`의 Raw SQL 예시(`fetch_complex_class_payload`)처럼 SQLAlchemy의 `text()`를 사용해 구현할 수 있습니다.
+### 기본 엔드포인트
 
----
+- `GET /` - 서버 상태 확인
+- `GET /docs` - Swagger UI 문서
+- `GET /redoc` - ReDoc 문서
+
+### OpenAI API 엔드포인트
+
+- `POST /api/chat` - 채팅 완성 요청
+- `POST /api/completion` - 텍스트 완성 요청
+- `POST /api/embedding` - 텍스트 임베딩 생성
+
+## 🛠️ 개발 가이드
+
+### 1. 코드 스타일
+
+- PEP 8 스타일 가이드 준수
+- Type hints 사용
+- Docstring 작성
+
+### 2. 에러 처리
+
+```python
+from fastapi import HTTPException
+
+try:
+    result = openai_service.generate_text(prompt)
+except Exception as e:
+    raise HTTPException(status_code=500, detail=str(e))
+```
+
+### 3. 로깅 설정
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+```
+
+### 4. 테스트 실행
+
+```bash
+# pytest 설치
+pip install pytest pytest-asyncio httpx
+
+# 테스트 실행
+pytest tests/
+```
+
+## 🔒 보안 고려사항
+
+- API 키와 비밀번호 등은 환경 변수로 관리하고 코드에 직접 작성하지 않습니다.
+- HTTPS 환경에서 API를 제공하도록 설정합니다.
+- 요청 검증 및 rate limiting을 통해 abuse를 방지합니다.
