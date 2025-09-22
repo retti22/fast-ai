@@ -14,7 +14,7 @@
    python -m pip install --upgrade pip
    python -m pip install -r requirements.txt
    ```
-   `requirements.txt`에는 FastAPI, SQLAlchemy, PostgreSQL 드라이버, Pydantic, Alembic이 포함되어 있습니다.
+   `requirements.txt`에는 FastAPI, SQLAlchemy, PostgreSQL 드라이버, Pydantic 관련 패키지가 포함되어 있습니다.
 
 ## 2단계. 환경 변수 구성
 1. `.env` 파일에 데이터베이스 연결 문자열을 선언합니다.
@@ -68,11 +68,6 @@
 ## 4단계. 애플리케이션 구조 이해
 ```
 fast-ai/
-├── alembic/               # Alembic 환경 및 마이그레이션 스크립트
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions/
-├── alembic.ini            # Alembic 설정 파일
 ├── app/
 │   ├── api/               # 라우터, 의존성 선언
 │   ├── core/              # 설정 로직 (Settings)
@@ -89,22 +84,7 @@ fast-ai/
 - `app/main.py`는 Lifespan 컨텍스트에서 `Base.metadata.create_all(bind=engine)`을 호출해 개발 환경에서 초기 테이블을 생성합니다.
 - `app/api/dependencies.py`의 `get_db` 의존성이 요청마다 SQLAlchemy 세션을 제공합니다.
 
-## 5단계. Alembic 마이그레이션 적용
-1. Alembic은 `.env`의 `DATABASE_URL`을 사용하도록 설정되어 있습니다 (`alembic/env.py`).
-2. 최초 실행 또는 스키마 변경 시 다음 절차를 따릅니다.
-   ```bash
-   alembic revision --autogenerate -m "describe change"
-   alembic upgrade head
-   ```
-3. 상태 조회/롤백 명령은 아래와 같습니다.
-   ```bash
-   alembic history
-   alembic current
-   alembic downgrade -1  # 한 단계 되돌리기
-   ```
-4. 생성된 스크립트는 `alembic/versions/` 하위에 저장되며, `upgrade()`/`downgrade()`에 SQL이 정의됩니다.
-
-## 6단계. product_order CRUD 구성요소
+## 5단계. product_order CRUD 구성요소
 1. **모델** (`app/models/product_order.py`)
    ```python
    class ProductOrder(Base):
@@ -119,16 +99,11 @@ fast-ai/
 3. **서비스** (`app/services/product_order.py`)가 생성/조회/수정/삭제 로직을 캡슐화합니다.
 4. **라우터** (`app/api/routers/product_orders.py`)는 `/product-orders` 경로에 CRUD API를 제공합니다.
 
-## 7단계. 애플리케이션 실행 및 확인
+## 6단계. 애플리케이션 실행 및 확인
 1. 가상환경이 활성화되어 있는지 확인합니다 (`source .venv/bin/activate`).
 2. PostgreSQL 컨테이너가 실행 중인지 확인합니다 (`docker compose ps`).
-3. (최초 실행 시) 마이그레이션을 적용합니다.
-   ```bash
-   alembic revision --autogenerate -m "init"
-   alembic upgrade head
-   ```
-4. FastAPI 서버를 실행합니다.
+3. FastAPI 서버를 실행합니다.
    ```bash
    uvicorn main:app --reload
    ```
-5. 브라우저에서 `http://127.0.0.1:8000/docs`를 열어 OpenAPI 문서와 CRUD 엔드포인트를 테스트합니다.
+4. 브라우저에서 `http://127.0.0.1:8000/docs`를 열어 OpenAPI 문서와 CRUD 엔드포인트를 테스트합니다.

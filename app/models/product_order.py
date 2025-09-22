@@ -11,3 +11,4 @@ class ProductOrder(Base):
     product_name = Column(String(255), nullable=False)
     shipping_address = Column(String(255), nullable=False)
     shipping_status = Column(String(50), nullable=False, default="pending")
+    remark = Column(String(255), nullable=True)
