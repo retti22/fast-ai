@@ -4,16 +4,25 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 import psycopg
+from dotenv import load_dotenv
 from langchain_core.documents import Document
-from langchain_text_splitters import TokenTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter, TokenTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_postgres.vectorstores import PGVector
 from openai import OpenAI
 
+load_dotenv()
+
 API_KEY_SET = bool(os.getenv("OPENAI_API_KEY"))
+if not API_KEY_SET:
+    print(
+        "[test_embedding_workflow] OPENAI_API_KEY not detected; tests requiring OpenAI will skip."
+    )
 pytestmark = pytest.mark.skipif(
     not API_KEY_SET, reason="requires OPENAI_API_KEY environment variable"
 )
@@ -21,6 +30,10 @@ pytestmark = pytest.mark.skipif(
 EMBEDDING_MODEL = os.getenv("TEXT_EMBEDDING_MODEL", "text-embedding-3-small")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o-mini")
 DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    print(
+        "[test_embedding_workflow] DATABASE_URL not detected; vector store tests will skip if accessed."
+    )
 
 ASSETS_DIR = Path("tests/assets")
 
@@ -118,8 +131,11 @@ def vector_store(embedding_client: OpenAIEmbeddings):
                 # )
 
 
+KST = ZoneInfo("Asia/Seoul")
+
+
 def _text_document(text: str, **metadata: str) -> Document:
-    base_metadata = {"created_at": datetime.now(timezone.utc).isoformat()}
+    base_metadata = {"created_at": datetime.now(tz=KST).isoformat()}
     base_metadata.update(metadata)
     return Document(page_content=text, metadata=base_metadata)
 
@@ -193,13 +209,17 @@ def test_vector_store_write(vector_store: PGVector) -> None:
 # 텍스트 파일 문서 읽기 및 벡터 스토어에 저장
 def test_text_reader_and_store(vector_store: PGVector) -> None:
     text_path = ASSETS_DIR / "운수좋은날.txt"
-    document = _text_document(
-        _read_text_asset(text_path),
-        source=text_path.name,
-        category="소설",
-    )
+    documents = [
+        _text_document(
+            _read_text_asset(text_path),
+            source=text_path.name,
+        )
+    ]
+    for document in documents:
+        document.metadata["category"] = "소설"
+
     splitter = TokenTextSplitter()
-    chunks = splitter.split_documents([document])
+    chunks = splitter.split_documents(documents)
     vector_store.add_documents(chunks)
     assert chunks
     results = vector_store.similarity_search(
@@ -211,13 +231,30 @@ def test_text_reader_and_store(vector_store: PGVector) -> None:
 
 
 # 토큰 텍스트 스플리터 테스트
-def test_token_text_splitter_configuration() -> None:
-    splitter = TokenTextSplitter(chunk_size=100, chunk_overlap=20)
-    docs = [_text_document(NEWS1), _text_document(NEWS2), _text_document(NEWS3)]
-    chunks = splitter.split_documents(docs)
-    print(f"token splitter produced {len(chunks)} chunks")
-    assert chunks
-    assert all(len(chunk.page_content) > 0 for chunk in chunks)
+def test_token_text_splitter_configuration(embedding_client: OpenAIEmbeddings) -> None:
+    vector_dimension = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
+    print(f"dimension: {vector_dimension}")
+
+    documents = [
+        Document(page_content=NEWS1),
+        Document(page_content=NEWS2),
+        Document(page_content=NEWS3),
+    ]
+
+    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        model_name=EMBEDDING_MODEL,
+        chunk_size=100,
+        chunk_overlap=20,
+    )
+
+    raw_chunks = splitter.split_documents(documents)
+    limited_chunks = raw_chunks[:5]
+
+    for chunk in limited_chunks:
+        print(f"Chunk: {chunk.page_content}")
+
+    assert limited_chunks
+    assert all(len(chunk.page_content) > 0 for chunk in limited_chunks)
 
 
 @pytest.mark.skipif(not (ASSETS_DIR / "인공지능_시대의_예술.pdf").exists(), reason="requires 인공지능_시대의_예술.pdf asset")
@@ -246,7 +283,7 @@ def test_text_reader_similarity_search(vector_store: PGVector, chat_llm: ChatOpe
         _read_text_asset(text_path),
         source=text_path.name,
     )
-    splitter = TokenTextSplitter()
+    splitter = RecursiveCharacterTextSplitter()
     chunks = splitter.split_documents([document])
     vector_store.add_documents(chunks)
 
