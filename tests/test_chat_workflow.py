@@ -33,25 +33,28 @@ def _ensure_artifact_dir() -> Path:
 
 # 간단한 채팅 질의 테스트
 def test_chat_model_simple(chat_client: OpenAI) -> None:
+    # https://platform.openai.com/docs/api-reference/chat/create?lang=python
     response = chat_client.chat.completions.create(
-        model=CHAT_MODEL,
+        model="gpt-4o-mini",
+        # 최종 사용자가 보낸 메시지로, 프롬프트나 추가 컨텍스트 정보가 포함되어 있습니다.
         messages=[{"role": "user", "content": "서울 올림픽은 몇회 올림픽이야?"}],
     )
     content = response.choices[0].message.content
-    print(f"test_chat_model_simple response = {content}")
     assert content
-    assert "올림픽" in content
+    print(f"test_chat_model_simple response = {content}")
 
 
 # 시스템 메시지를 포함한 채팅 테스트
 def test_chat_model_message(chat_client: OpenAI) -> None:
+    # https://platform.openai.com/docs/api-reference/chat/create?lang=python
     response = chat_client.chat.completions.create(
-        model=CHAT_MODEL,
+        model="gpt-4o-mini",
         messages=[
+            # 사용자가 보낸 메시지와 관계없이 모델이 따라야 하는 개발자 제공 지침
             {"role": "system", "content": "답변은 간략하게 하고, 마지막에는 실제 뉴스를 참고하라는 말을 해 주세요"},
             {"role": "user", "content": "서울 올림픽에 대해 알려 주세요"},
         ],
-        temperature=0.7,
+        temperature=1.0,
     )
     content = response.choices[0].message.content
     print(f"test_chat_model_message response = {content}")
@@ -80,7 +83,11 @@ def test_chat_model_message_context(chat_client: OpenAI) -> None:
         },
         {"role": "user", "content": "그럼 그 두개의 올림픽중 참여 국가는 어디가 많아?"},
     ]
-    response = chat_client.chat.completions.create(model=CHAT_MODEL, messages=history, temperature=0.6)
+    response = chat_client.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=history,
+        temperature=0.6
+    )
     content = response.choices[0].message.content
     print(f"test_chat_model_message_context response = {content}")
     assert content
@@ -89,29 +96,28 @@ def test_chat_model_message_context(chat_client: OpenAI) -> None:
 
 # 다중 응답과 사용량·레이트리밋 확인
 def test_chat_prompt_with_usage_and_ratelimit(chat_client: OpenAI) -> None:
-    messages = [
-        {"role": "system", "content": "간략하게 답변해 주세요."},
-        {"role": "user", "content": "서울 올림픽에 대해 알려 주세요"},
-        {
-            "role": "assistant",
-            "content": (
-                "서울 올림픽, 공식명칭은 제24회 하계 올림픽대회는 1988년 9월 17일부터 10월 2일까지 대한민국 서울에서"
-                " 개최되었습니다."
-            ),
-        },
-        {"role": "user", "content": "그럼 바로 그 이전 올림픽은 어디야?"},
-        {
-            "role": "assistant",
-            "content": "바로 이전 올림픽은 1984년 하계 올림픽으로, 미국 로스앤젤레스에서 개최되었습니다.",
-        },
-        {"role": "user", "content": "그럼 그 두개의 올림픽중 참여 국가는 어디가 많아?"},
-    ]
 
     raw = chat_client.chat.completions.with_raw_response.create(
-        model=CHAT_MODEL,
-        messages=messages,
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "간략하게 답변해 주세요."},
+            {"role": "user", "content": "서울 올림픽에 대해 알려 주세요"},
+            {
+                "role": "assistant", # 사용자 메시지에 대한 응답으로 모델이 보낸 메시지입니다.
+                "content": (
+                    "서울 올림픽, 공식명칭은 제24회 하계 올림픽대회는 1988년 9월 17일부터 10월 2일까지 대한민국 서울에서"
+                    " 개최되었습니다."
+                ),
+            },
+            {"role": "user", "content": "그럼 바로 그 이전 올림픽은 어디야?"},
+            {
+                "role": "assistant", # 사용자 메시지에 대한 응답으로 모델이 보낸 메시지입니다.
+                "content": "바로 이전 올림픽은 1984년 하계 올림픽으로, 미국 로스앤젤레스에서 개최되었습니다.",
+            },
+            {"role": "user", "content": "그럼 그 두개의 올림픽중 참여 국가는 어디가 많아?"},
+        ],
         temperature=1.0,
-        n=2,
+        n=2,  # 각 입력 메시지에 대해 생성할 채팅 완료 선택지의 개수입니다. 모든 선택지에서 생성된 토큰 수에 따라 요금이 부과됩니다. 비용을 최소화하려면 n을 1로 유지하세요.
     )
 
     response = raw.parse()

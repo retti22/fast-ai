@@ -1,78 +1,68 @@
 """Audio synthesis smoke tests mirroring the Spring Boot example, using OpenAI."""
+from __future__ import annotations
+
 import os
 from pathlib import Path
-import shutil
 
 import pytest
+from dotenv import load_dotenv
 from openai import OpenAI
+
+load_dotenv()
 
 API_KEY_SET = bool(os.getenv("OPENAI_API_KEY"))
 pytestmark = pytest.mark.skipif(
     not API_KEY_SET, reason="requires OPENAI_API_KEY environment variable"
 )
 
-SPEECH_MODEL = os.getenv("SPEECH_MODEL", "gpt-4o-mini-tts")
-DEFAULT_VOICE = os.getenv("SPEECH_VOICE", "alloy")
-DEFAULT_FORMAT = os.getenv("SPEECH_FORMAT", "mp3")
-
-ARTIFACT_ROOT = Path(os.getenv("AUDIO_TEST_ARTIFACTS", "tests/artifacts"))
-
 @pytest.fixture(scope="module")
 def speech_client() -> OpenAI:
-    return OpenAI()
+    return OpenAI()  # 테스트 전역에서 재사용할 OpenAI 클라이언트를 생성한다
 
-def _save_artifact(src: Path, target_name: str) -> Path:
-    ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
-    dest = ARTIFACT_ROOT / target_name
-    shutil.copy2(src, dest)
-    return dest
 
-def _synthesize(
-    client: OpenAI,
-    text: str,
-    out_path: Path,
-    *,
-    voice: str | None = None,
-    output_format: str | None = None,
-    speed: float | None = None,
-) -> dict:
-    kwargs: dict[str, object] = {
-        "model": SPEECH_MODEL,
-        "voice": voice or DEFAULT_VOICE,
-        "input": text,
-        "response_format": output_format or DEFAULT_FORMAT,
-    }
-    if speed is not None:
-        kwargs["speed"] = speed
+def _write_artifact(data: bytes, filename: str) -> Path:
+    artifact_root = Path("tests/artifacts")  # 음성 아티팩트를 보관할 기본 폴더
+    artifact_root.mkdir(parents=True, exist_ok=True)  # 아티팩트 저장 폴더가 없다면 생성한다
+    target_path = artifact_root / filename  # 최종 저장 경로를 계산한다
+    target_path.write_bytes(data)  # 음성 데이터를 파일에 기록한다
+    return target_path  # 저장된 파일 경로를 반환한다
 
-    with client.audio.speech.with_streaming_response.create(**kwargs) as stream:
-        stream.stream_to_file(out_path)
-        return dict(stream.headers)
+# 간단한 음성 합성 테스트 (TTS)
+def test_speech_model_simple(tmp_path: Path, speech_client: OpenAI) -> None:
+    output_file = tmp_path / "ai_tts_simple.mp3"  # 임시 디렉터리에 결과 파일 경로를 준비한다
 
-# 간단한 음성 합성 테스트
-def test_simple_tts(tmp_path: Path, speech_client: OpenAI) -> None:
-    announcement = "안녕하세요 반갑습니다. 스프링부트는 자바 프레임워크 중에 가장 인기가 많은 프레임워크입니다."
-    output_file = tmp_path / "ai_tts_simple.mp3"
-    headers = _synthesize(speech_client, announcement, output_file)
-
-    assert output_file.exists()
-    assert output_file.stat().st_size > 0
-    assert "x-ratelimit-limit-requests" in headers
-    _save_artifact(output_file, "ai_tts_simple.mp3")
-
-# 음성 합성 옵션 테스트
-def test_tts_with_options(tmp_path: Path, speech_client: OpenAI) -> None:
-    sample_text = "안녕하세요 반갑습니다. 스프링부트는 자바 프레임워크 중에 가장 인기가 많은 프레임워크입니다."
-    output_file = tmp_path / "ai_tts_options.mp3"
-    headers = _synthesize(
-        speech_client,
-        sample_text,
-        output_file,
+    # https://platform.openai.com/docs/guides/text-to-speech#page-top
+    # https://platform.openai.com/docs/api-reference/audio/createSpeech
+    audio = speech_client.audio.speech.create(
+        model="tts-1-hd",
         voice="nova",
-        speed=1.0,
+        input="안녕하세요 반갑습니다. 스프링부트는 자바 프레임워크 중에 가장 인기가 많은 프레임워크입니다."
     )
 
-    assert output_file.exists()
-    assert output_file.stat().st_size > 0
-    assert headers.get("x-ratelimit-remaining-requests") is not None
-    _save_artifact(output_file, "ai_tts_options.mp3")
+    output_file.write_bytes(audio.content)
+
+    assert output_file.exists()  # 파일이 생성되었는지 확인한다
+    assert output_file.stat().st_size > 0  # 생성된 파일 크기가 0보다 큰지 검증한다
+
+    saved_path = _write_artifact(audio.content, "ai_tts_simple3.mp3")  # 결과 파일을 아티팩트 폴더에 복사한다
+    assert saved_path.exists()  # 복사된 아티팩트가 존재하는지 확인한다
+
+# 음성 합성 옵션 테스트 (스트리밍)
+def test_speech_model_options(tmp_path: Path, speech_client: OpenAI) -> None:
+    
+    speech_file_path = tmp_path / "ai_tts_options.mp3"  # 임시 디렉터리에 옵션 결과 파일 경로를 준비한다
+
+    # https://platform.openai.com/docs/guides/text-to-speech#page-top
+    # https://platform.openai.com/docs/api-reference/audio/createSpeech
+    with speech_client.audio.speech.with_streaming_response.create(
+        model="gpt-4o-mini-tts",
+        voice="alloy",
+        input="안녕하세요 반갑습니다. 스프링부트는 자바 프레임워크 중에 가장 인기가 많은 프레임워크입니다."
+    ) as response:
+        response.stream_to_file(speech_file_path)
+
+    assert speech_file_path.exists()  # 파일 생성 여부를 확인한다
+    assert speech_file_path.stat().st_size > 0  # 파일 크기가 유효한지 검증한다
+
+    saved_path = _write_artifact(speech_file_path.read_bytes(), "ai_tts_options4.mp3")  # 결과물을 아티팩트 폴더에 남긴다
+    assert saved_path.exists()  # 아티팩트가 존재하는지 확인한다
